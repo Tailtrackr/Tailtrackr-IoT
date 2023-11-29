@@ -1,42 +1,51 @@
+#include <TinyGsmClient.h>
+#include <ArduinoHttpClient.h>
+#include <StreamDebugger.h>
+#include <TinyGPS.h>
+
 #define PKEY 13
 #define RST 14
 #define SerialMon Serial
 #define SerialAT Serial2
+#define TINY_GSM_MODEM_SIM7600
+#define TINY_GSM_DEBUG SerialMon
+// set GSM PIN, if any
+#define GSM_PIN ""
+
+#if !defined(TINY_GSM_RX_BUFFER)
+#define TINY_GSM_RX_BUFFER 650
+#endif
+
+#ifdef DUMP_AT_COMMANDS
+StreamDebugger debugger(SerialAT, SerialMon);
+TinyGsm        modem(debugger);
+#else
+TinyGsm        modem(SerialAT);
+#endif
+
 int ledState = LOW;
 const int ledPin =  12;
 int counter = 0;
 unsigned long cur_time_led, old_time_led;
 unsigned long cur_time, old_time;
 bool hold = 0;
-#define TINY_GSM_MODEM_SIM7600
-#if !defined(TINY_GSM_RX_BUFFER)
-#define TINY_GSM_RX_BUFFER 650
-#endif
-#define TINY_GSM_DEBUG SerialMon
-// set GSM PIN, if any
-#define GSM_PIN ""
-// Your GPRS credentials, if any
+
+// GPRS credentials
 const char apn[]      = "Internet";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
-const char server[]   = "https://tailtrackr-404701-default-rtdb.asia-southeast1.firebasedatabase.app/";  // Replace with your Cloud Run server URL
-const char resource[] = "/newData";              // Replace with your Cloud Run endpoint
+const char server[]   = "https://tailtrackr-404701-default-rtdb.asia-southeast1.firebasedatabase.app/";  // Cloud Run server URL
+const char resource[] = "/newData"; // Cloud Run endpoint
 const int  port       = 443;  // Use port 443 for HTTPS
-#include <TinyGsmClient.h>
-#include <ArduinoHttpClient.h>
-#ifdef DUMP_AT_COMMANDS
-#include <StreamDebugger.h>
-StreamDebugger debugger(SerialAT, SerialMon);
-TinyGsm        modem(debugger);
-#else
-TinyGsm        modem(SerialAT);
-#endif
+
 TinyGsmClient client(modem);
 HttpClient    http(client, server, port);
+TinyGPS gps;
 
 void setup() {
   SerialMon.begin(115200);
   SerialAT.begin(115200);
+  gps.begin(SerialAT);
   delay(250);
   SerialMon.println("test at mulai");
   pinMode(ledPin, OUTPUT);
@@ -79,15 +88,25 @@ void loop() {
         break;
     }
 
+    // Read NMEA data from GPS module
+    while (Serial2.available()) {
+      gps.encode(Serial2.read());
+    }
     // Generate random latitude and longitude
-    float latitude = generateRandomFloat(-90.0, 90.0);
-    float longitude = generateRandomFloat(-180.0, 180.0);
+    float latitude, longitude;
 
-    // Create JSON payload
-    String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
+    // Check if GPS data is valid
+    if (gps.location.isValid()) {
+      // Extract latitude and longitude values
+      latitude = gps.location.lat();
+      longitude = gps.location.lng();
 
-    // Send data to Cloud Run server
-    sendToCloudRun(payload);
+      // Create JSON payload
+      String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
+
+      // Send data to Cloud Run server
+      sendToCloudRun(payload);
+    }
 
     if (ledState == LOW) {
       ledState = HIGH;
