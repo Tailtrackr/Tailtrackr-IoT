@@ -1,6 +1,7 @@
 #define PKEY 13
 #define RST 14
 #define SerialMon Serial
+#define SerialGPS Serial1
 #define SerialAT Serial2
 int ledState = LOW;
 const int ledPin =  12;
@@ -13,9 +14,8 @@ bool hold = 0;
 #define TINY_GSM_RX_BUFFER 650
 #endif
 #define TINY_GSM_DEBUG SerialMon
-// set GSM PIN, if any
 #define GSM_PIN ""
-// Your GPRS credentials, if any
+// GPRS credentials
 const char apn[]      = "Internet";
 const char gprsUser[] = "";
 const char gprsPass[] = "";

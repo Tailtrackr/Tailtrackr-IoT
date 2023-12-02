@@ -1,46 +1,51 @@
-#include <ArduinoHttpClient.h>
-#include <StreamDebugger.h>
-#include <TinyGsmClient.h>
-#include <TinyGPS.h>
+#include <TinyGPS++.h>
 
+#define GSM_RXD 16
+#define GSM_TXD 17
 #define PKEY 13
 #define RST 14
 #define SerialMon Serial
+#define SerialGPS Serial1
 #define SerialAT Serial2
+
 #define TINY_GSM_MODEM_SIM7600
-#define TINY_GSM_DEBUG SerialMon
-// set GSM PIN, if any
-#define GSM_PIN ""
 #if !defined(TINY_GSM_RX_BUFFER)
 #define TINY_GSM_RX_BUFFER 650
 #endif
+#define TINY_GSM_DEBUG SerialMon
+#define GSM_PIN ""
+
+// GPRS credentials
+const char apn[]      = "www.xl4g.net";
+const char gprsUser[] = "";
+const char gprsPass[] = "";
+const char server[]   = "tailtrackr-404701-default-rtdb.asia-southeast1.firebasedatabase.app";
+const char resource[] = "/newData";
+const int  port       = 443;
+
+int ledState = LOW;
+const int ledPin =  12;
+unsigned long cur_time, old_time;
+
+#include <TinyGsmClient.h>
+#include <ArduinoHttpClient.h>
 #ifdef DUMP_AT_COMMANDS
+#include <StreamDebugger.h>
 StreamDebugger debugger(SerialAT, SerialMon);
 TinyGsm        modem(debugger);
 #else
 TinyGsm        modem(SerialAT);
 #endif
 
-int ledState = LOW;
-const int ledPin =  12;
-unsigned long cur_time, old_time;
-
-// GPRS credentials
-const char apn[]      = "Internet";
-const char gprsUser[] = "";
-const char gprsPass[] = "";
-const char server[]   = "https://tailtrackr-404701-default-rtdb.asia-southeast1.firebasedatabase.app";
-const char resource[] = "/newData";
-const int  port       = 443;  // Use port 443 for HTTPS
-
 TinyGsmClient client(modem);
 HttpClient    http(client, server, port);
-TinyGPS gps;
+TinyGPSPlus gps;
 
 void setup() {
   SerialMon.begin(115200);
-  SerialAT.begin(115200);
-  gps.begin(SerialAT);
+  SerialAT.begin(115200, SERIAL_8N1, GSM_RXD, GSM_TXD);
+  SerialGPS.begin(9600);
+  // gps.begin(SerialGPS);
   delay(250);
   SerialMon.println("starting...");
   pinMode(ledPin, OUTPUT);
@@ -64,23 +69,32 @@ void setup() {
 }
 
 void loop() {
-  if (isPinReady()){
-    // Read NMEA data from GPS module
-    while (SerialAT.available()) {
-      gps.encode(SerialAT.read());
-    }
+  // if (isPinReady()){
+  //   // Read NMEA data from GPS module
+  //   while (SerialGPS.available()) {
+  //     gps.encode(SerialGPS.read());
+  //   }
 
-    if (gps.location.isValid()) {
-      float latitude = gps.location.lat();
-      float longitude = gps.location.lng();
+  //   if (gps.location.isValid()) {
+  //     float latitude = gps.location.lat();
+  //     float longitude = gps.location.lng();
 
-      // Create JSON payload
-      String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
-      sendToCloudRun(payload);
-    }
-  } else {
-    Serial.println("SIM card pin is not ready. Cannot proceed.");
-  }
+  //     // Create JSON payload
+  //     String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
+  //     sendToCloudRun(payload);
+  //   }
+  // } else {
+  //   Serial.println("SIM card pin is not ready. Cannot proceed.");
+  // }
+  // SerialMon.println("sebelum dicek pinnya");
+  float latitude = generateRandomFloat(-90.0, 90.0);
+  float longitude = generateRandomFloat(-180.0, 180.0);
+
+  // Create JSON payload
+  String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
+
+  // Send data to Cloud Run server
+  sendToCloudRun(payload);
 
   if (ledState == LOW) {
     ledState = HIGH;
@@ -95,18 +109,6 @@ void send_at(char *_command) {
   wRespon(1000);
 }
 
-bool isPinReady() {
-  send_at("AT+CPIN?");
-  delay(1000);
-  while (SerialAT.available()) {
-    String response = SerialAT.readStringUntil('\n');
-    if (response.indexOf("READY") != -1) {
-      return true;
-    }
-  }
-  return false;
-}
-
 void wRespon(long waktu) {
   cur_time = millis();
   old_time = cur_time;
@@ -118,13 +120,21 @@ void wRespon(long waktu) {
   }
 }
 
-void sendToCloudRun(String data) {
-  SerialMon.println("Sending data to Cloud Run: " + data);
-  http.beginRequest();
-  http.post(resource, "application/json", data);
-  int httpResponseCode = http.responseStatusCode();
-  SerialMon.print("HTTP Response code: ");
-  SerialMon.println(httpResponseCode);
-  http.endRequest();
-  delay(1000);
+float generateRandomFloat(float min, float max) {
+  return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
+}
+
+void sendToCloudRun(const String &data) {
+  // Convert String to char array
+  char dataCharArray[data.length() + 1];
+  data.toCharArray(dataCharArray, sizeof(dataCharArray));
+  String httpDataCommand = "AT+HTTPDATA=" + String(data.length()) + ",5000";
+  
+  send_at("AT+HTTPINIT");
+  send_at("AT+HTTPPARA=\"URL\",\"https://app-backend-wdsuayrd4q-et.a.run.app/newData\"");
+  send_at("AT+HTTPPARA=\"CONTENT\",\"application/json\"");
+  send_at(const_cast<char*>(httpDataCommand.c_str()));  // Pass the char array instead of String
+  send_at(dataCharArray);
+  send_at("AT+HTTPACTION=1");
+  send_at("AT+HTTPTERM");
 }
