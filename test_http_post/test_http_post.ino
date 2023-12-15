@@ -1,12 +1,12 @@
-#include <TinyGPS++.h>
+#include <TinyGPSPlus.h>
 
 #define GSM_RXD 16
 #define GSM_TXD 17
+#define GPS_RXD 4
+#define GPS_TXD 2
 #define PKEY 13
 #define RST 14
 #define SerialMon Serial
-#define SerialGPS Serial1
-#define SerialAT Serial2
 
 #define TINY_GSM_MODEM_SIM7600
 #if !defined(TINY_GSM_RX_BUFFER)
@@ -29,25 +29,67 @@ unsigned long cur_time, old_time;
 
 #include <TinyGsmClient.h>
 #include <ArduinoHttpClient.h>
-#ifdef DUMP_AT_COMMANDS
-#include <StreamDebugger.h>
-StreamDebugger debugger(SerialAT, SerialMon);
-TinyGsm        modem(debugger);
-#else
-TinyGsm        modem(SerialAT);
-#endif
+HardwareSerial SerialAT(2);
+TinyGsm modem(SerialAT);
 
 TinyGsmClient client(modem);
 HttpClient    http(client, server, port);
 TinyGPSPlus gps;
+HardwareSerial neogps(1);
 
 void setup() {
-  SerialMon.begin(115200);
+  SerialMon.begin(9600);
   SerialAT.begin(115200, SERIAL_8N1, GSM_RXD, GSM_TXD);
-  SerialGPS.begin(9600);
-  // gps.begin(SerialGPS);
+  neogps.begin(9600, SERIAL_8N1, GPS_RXD, GPS_TXD);
   delay(250);
-  SerialMon.println("starting...");
+  initialize();
+}
+
+void loop() {
+  // Read NMEA data from GPS module
+  float latitude, longitude;
+
+  while (neogps.available() > 0){
+    if (gps.encode(neogps.read())){
+      if (gps.location.isValid()){
+        latitude = gps.location.lat();
+        longitude = gps.location.lng();
+      }
+      else
+        SerialMon.print(F("INVALID"));
+    }
+    if (millis() > 5000 && gps.charsProcessed() < 10){
+      SerialMon.println(F("No GPS detected: check wiring."));
+      while (true);
+    }
+  }
+
+  // Create JSON payload
+  String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
+
+  // Send data to Cloud Run server
+  sendToCloudRun(payload);
+
+  if (ledState == LOW) {
+    ledState = HIGH;
+  } else {
+    ledState = LOW;
+  }
+  digitalWrite(ledPin, ledState);
+}
+
+void updateSerial(){
+  delay(500);
+  while (SerialMon.available()){
+    neogps.write(Serial.read()); //Forward what Serial received to Software Serial Port
+  }
+  while (neogps.available()){
+    SerialMon.write(neogps.read()); //Forward what Software Serial received to Serial Port
+  }
+}
+
+void initialize(){
+  SerialMon.println("Starting module...");
   pinMode(ledPin, OUTPUT);
   pinMode(RST, OUTPUT);
   pinMode(PKEY, OUTPUT);
@@ -65,43 +107,15 @@ void setup() {
   String modemInfo = modem.getModemInfo();
   SerialMon.print("Modem Info: ");
   SerialMon.println(modemInfo);
-  delay(1000);
-}
-
-void loop() {
-  // if (isPinReady()){
-  //   // Read NMEA data from GPS module
-  //   while (SerialGPS.available()) {
-  //     gps.encode(SerialGPS.read());
-  //   }
-
-  //   if (gps.location.isValid()) {
-  //     float latitude = gps.location.lat();
-  //     float longitude = gps.location.lng();
-
-  //     // Create JSON payload
-  //     String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
-  //     sendToCloudRun(payload);
-  //   }
-  // } else {
-  //   Serial.println("SIM card pin is not ready. Cannot proceed.");
-  // }
-  // SerialMon.println("sebelum dicek pinnya");
-  float latitude = generateRandomFloat(-90.0, 90.0);
-  float longitude = generateRandomFloat(-180.0, 180.0);
-
-  // Create JSON payload
-  String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
-
-  // Send data to Cloud Run server
-  sendToCloudRun(payload);
-
-  if (ledState == LOW) {
-    ledState = HIGH;
-  } else {
-    ledState = LOW;
-  }
-  digitalWrite(ledPin, ledState);
+  delay(5000);
+  send_at("AT+CPIN?");
+  send_at("AT+CSQ");
+  send_at("AT+CREG?");
+  send_at("AT+CGREG?");
+  send_at("AT+CPSI?");
+  send_at("AT+CGDCONT=1,\"IP\",\"www.xl4g.net\"");
+  send_at("AT+CGACT=1,1");
+  send_at("AT+CGACT?");
 }
 
 void send_at(char *_command) {
