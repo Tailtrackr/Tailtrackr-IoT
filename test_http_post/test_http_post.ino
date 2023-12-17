@@ -6,7 +6,10 @@
 #define GPS_TXD 2
 #define PKEY 13
 #define RST 14
+
 #define SerialMon Serial
+#define neogps Serial1
+#define SerialAT Serial2
 
 #define TINY_GSM_MODEM_SIM7600
 #if !defined(TINY_GSM_RX_BUFFER)
@@ -29,18 +32,15 @@ unsigned long cur_time, old_time;
 
 #include <TinyGsmClient.h>
 #include <ArduinoHttpClient.h>
-HardwareSerial SerialAT(2);
 TinyGsm modem(SerialAT);
-
 TinyGsmClient client(modem);
 HttpClient    http(client, server, port);
 TinyGPSPlus gps;
-HardwareSerial neogps(1);
 
 void setup() {
   SerialMon.begin(9600);
-  SerialAT.begin(115200, SERIAL_8N1, GSM_RXD, GSM_TXD);
   neogps.begin(9600, SERIAL_8N1, GPS_RXD, GPS_TXD);
+  SerialAT.begin(115200, SERIAL_8N1, GSM_RXD, GSM_TXD);
   delay(250);
   initialize();
 }
@@ -50,15 +50,9 @@ void loop() {
   float latitude, longitude;
 
   while (neogps.available() > 0){
-    if (gps.encode(neogps.read())){
-      if (gps.location.isValid()){
-        latitude = gps.location.lat();
-        longitude = gps.location.lng();
-      }
-      else
-        SerialMon.print(F("INVALID"));
-    }
-    if (millis() > 5000 && gps.charsProcessed() < 10){
+    if (gps.encode(neogps.read()))
+      displayInfo(latitude, longitude);
+    if (millis() > 5000 && gps.charsProcessed() < 10) {
       SerialMon.println(F("No GPS detected: check wiring."));
       while (true);
     }
@@ -85,6 +79,23 @@ void updateSerial(){
   }
   while (neogps.available()){
     SerialMon.write(neogps.read()); //Forward what Software Serial received to Serial Port
+  }
+}
+
+void displayInfo(float latitude, float longitude){
+  Serial.print(F("\nLocation: \n"));
+  if (gps.location.isValid()){
+    Serial.print(F("Latitude: "));
+    Serial.print(gps.location.lat(), 6);
+    latitude = gps.location.lat();
+    Serial.print(F("\n"));
+    Serial.print(F("Longitude: "));
+    Serial.print(gps.location.lng(), 6);
+    longitude = gps.location.lng();
+  }
+  else
+  {
+    Serial.print(F("INVALID"));
   }
 }
 
@@ -132,10 +143,6 @@ void wRespon(long waktu) {
       SerialMon.print(SerialAT.readString());
     }
   }
-}
-
-float generateRandomFloat(float min, float max) {
-  return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
 }
 
 void sendToCloudRun(const String &data) {
