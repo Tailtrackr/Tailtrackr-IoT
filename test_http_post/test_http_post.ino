@@ -2,8 +2,6 @@
 
 #define GSM_RXD 16
 #define GSM_TXD 17
-#define GPS_RXD 4
-#define GPS_TXD 2
 #define PKEY 13
 #define RST 14
 
@@ -19,7 +17,7 @@
 #define GSM_PIN ""
 
 // GPRS credentials
-const char apn[]      = "www.xl4g.net";
+const char apn[]      = "Internet";
 const char gprsUser[] = "";
 const char gprsPass[] = "";
 const char server[]   = "tailtrackr-404701-default-rtdb.asia-southeast1.firebasedatabase.app";
@@ -38,33 +36,32 @@ HttpClient    http(client, server, port);
 TinyGPSPlus gps;
 
 void setup() {
+  // put your setup code here, to run once:
   SerialMon.begin(9600);
-  neogps.begin(9600, SERIAL_8N1, GPS_RXD, GPS_TXD);
-  SerialAT.begin(115200, SERIAL_8N1, GSM_RXD, GSM_TXD);
+  Serial1.begin(9600, SERIAL_8N1, 2, 4);
+  SerialAT.begin(115200, SERIAL_8N1, 16, 17);
   delay(250);
   initialize();
 }
 
 void loop() {
-  // Read NMEA data from GPS module
+  // put your main code here, to run repeatedly:
   float latitude, longitude;
-
-  while (neogps.available() > 0){
-    if (gps.encode(neogps.read()))
+  //updateSerial();
+  while (Serial1.available() > 0)
+    if (gps.encode(Serial1.read()))
       displayInfo(latitude, longitude);
-    if (millis() > 5000 && gps.charsProcessed() < 10) {
-      SerialMon.println(F("No GPS detected: check wiring."));
-      while (true);
-    }
+  if (millis() > 5000 && gps.charsProcessed() < 10)
+  {
+    Serial.println(F("No GPS detected: check wiring."));
+    while (true);
   }
 
-  // Create JSON payload
-  String payload = "{\"latitude\":" + String(latitude, 6) + ",\"longitude\":" + String(longitude, 6) + "}";
+  String payload = "{\"latitude\":" + String(gps.location.lat(), 6) + ",\"longitude\":" + String(gps.location.lng(), 6) + "}";
 
-  // Send data to Cloud Run server
   sendToCloudRun(payload);
 
-  if (ledState == LOW) {
+  if (ledState == LOW){
     ledState = HIGH;
   } else {
     ledState = LOW;
@@ -74,11 +71,11 @@ void loop() {
 
 void updateSerial(){
   delay(500);
-  while (SerialMon.available()){
-    neogps.write(Serial.read()); //Forward what Serial received to Software Serial Port
+  while (Serial.available()){
+    Serial1.write(Serial.read()); //Forward what Serial received to Software Serial Port
   }
-  while (neogps.available()){
-    SerialMon.write(neogps.read()); //Forward what Software Serial received to Serial Port
+  while (Serial1.available()){
+    Serial.write(Serial1.read()); //Forward what Software Serial received to Serial Port
   }
 }
 
@@ -124,7 +121,7 @@ void initialize(){
   send_at("AT+CREG?");
   send_at("AT+CGREG?");
   send_at("AT+CPSI?");
-  send_at("AT+CGDCONT=1,\"IP\",\"www.xl4g.net\"");
+  send_at("AT+CGDCONT=1,\"IP\",\"Internet\"");
   send_at("AT+CGACT=1,1");
   send_at("AT+CGACT?");
 }
@@ -159,3 +156,4 @@ void sendToCloudRun(const String &data) {
   send_at("AT+HTTPACTION=1");
   send_at("AT+HTTPTERM");
 }
+

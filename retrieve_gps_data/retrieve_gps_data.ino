@@ -6,7 +6,7 @@ HardwareSerial SerialPort(1);
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
-  Serial1.begin(9600, SERIAL_8N1, 4, 2);
+  Serial1.begin(9600, SERIAL_8N1, 2, 4);
   delay(3000);
 }
 
