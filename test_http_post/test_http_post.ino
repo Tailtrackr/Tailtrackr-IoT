@@ -2,11 +2,12 @@
 
 #define GSM_RXD 16
 #define GSM_TXD 17
+#define GPS_RXD 2
+#define GPS_TXD 4
 #define PKEY 13
 #define RST 14
 
 #define SerialMon Serial
-#define neogps Serial1
 #define SerialAT Serial2
 
 #define TINY_GSM_MODEM_SIM7600
@@ -38,19 +39,17 @@ TinyGPSPlus gps;
 void setup() {
   // put your setup code here, to run once:
   SerialMon.begin(9600);
-  Serial1.begin(9600, SERIAL_8N1, 2, 4);
-  SerialAT.begin(115200, SERIAL_8N1, 16, 17);
+  Serial1.begin(9600, SERIAL_8N1, GPS_RXD, GPS_TXD);
+  SerialAT.begin(115200, SERIAL_8N1, GSM_RXD, GSM_TXD);
   delay(250);
   initialize();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
-  float latitude, longitude;
   //updateSerial();
   while (Serial1.available() > 0)
     if (gps.encode(Serial1.read()))
-      displayInfo(latitude, longitude);
+      Serial.println("GPS detected");
   if (millis() > 5000 && gps.charsProcessed() < 10)
   {
     Serial.println(F("No GPS detected: check wiring."));
@@ -76,23 +75,6 @@ void updateSerial(){
   }
   while (Serial1.available()){
     Serial.write(Serial1.read()); //Forward what Software Serial received to Serial Port
-  }
-}
-
-void displayInfo(float latitude, float longitude){
-  Serial.print(F("\nLocation: \n"));
-  if (gps.location.isValid()){
-    Serial.print(F("Latitude: "));
-    Serial.print(gps.location.lat(), 6);
-    latitude = gps.location.lat();
-    Serial.print(F("\n"));
-    Serial.print(F("Longitude: "));
-    Serial.print(gps.location.lng(), 6);
-    longitude = gps.location.lng();
-  }
-  else
-  {
-    Serial.print(F("INVALID"));
   }
 }
 
